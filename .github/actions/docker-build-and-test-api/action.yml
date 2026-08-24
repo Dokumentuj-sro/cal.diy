@@ -1,0 +1,196 @@
+name: "Docker Build and Test (API v2)"
+description: "Build, smoke-test and publish the Cal.com API v2 image"
+
+inputs:
+  platform:
+    description: "Target platform (linux/amd64 or arm64)"
+    required: true
+  github-token:
+    description: "GitHub token for GHCR"
+    required: true
+  postgres-user:
+    description: "PostgreSQL user"
+    required: true
+  postgres-password:
+    description: "PostgreSQL password"
+    required: true
+  postgres-db:
+    description: "PostgreSQL database name"
+    required: true
+  database-host:
+    description: "Database host"
+    required: true
+  push-image:
+    description: "Whether to push the built image"
+    required: false
+    default: "false"
+  use-as-latest:
+    description: "Publish as latest"
+    required: false
+    default: "false"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Log in to the Github Container registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ inputs.github-token }}
+
+    # Same metadata-action configuration as the web image, so a given git ref
+    # produces the same tag for both. See DEPLOY.md: the two images must be
+    # deployed at matching tags.
+    - name: Docker meta
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: |
+          ghcr.io/dokumentuj-sro/cal.diy-api
+        flavor: |
+          latest=${{ !github.event.release.prerelease && inputs.use-as-latest == 'true' }}
+
+    - name: Copy env
+      shell: bash
+      run: |
+        grep -o '^[^#]*' .env.example > .env
+        cat .env >> $GITHUB_ENV
+
+    # The API image needs postgres and redis to boot for the smoke test below.
+    # It does not need them to build: apps/api/v2/Dockerfile only runs
+    # `prisma generate`, which reads schema.prisma and never connects. That is
+    # why buildx here is plain, with none of the network=container:database
+    # plumbing the web build requires.
+    - name: Start database and redis
+      shell: bash
+      run: |
+        docker compose up -d database redis
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build image
+      id: docker_build
+      uses: docker/build-push-action@v6
+      with:
+        context: ./
+        file: ./apps/api/v2/Dockerfile
+        load: true
+        push: false
+        platforms: ${{ inputs.platform }}
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        build-args: |
+          DATABASE_URL=postgresql://${{ inputs.postgres-user }}:${{ inputs.postgres-password }}@${{ inputs.database-host }}/${{ inputs.postgres-db }}
+          DATABASE_DIRECT_URL=postgresql://${{ inputs.postgres-user }}:${{ inputs.postgres-password }}@${{ inputs.database-host }}/${{ inputs.postgres-db }}
+
+    - name: Test runtime
+      shell: bash
+      env:
+        DB_URL: "postgresql://${{ inputs.postgres-user }}:${{ inputs.postgres-password }}@database/${{ inputs.postgres-db }}"
+        # Throwaway values. This container is torn down at the end of the job and
+        # is never reachable from outside the runner.
+        NEXTAUTH_SECRET: "EI4qqDpcfdvf4A+0aQEEx8JjHxHSy4uWiZw/F32K+pA="
+        JWT_SECRET: "0zfLtY99wjeLnsM7qsa8xsT+Q0oSgnOL"
+      run: |
+        tags="${{ steps.meta.outputs.tags }}"
+        IFS=',' read -ra ADDR <<< "$tags"
+        tag=${ADDR[0]}
+
+        # Every variable below that has no default in apps/api/v2/src/config/app.ts
+        # is mandatory: getEnv() throws on a missing key and the process exits
+        # before it ever listens. That includes the two STRIPE_* values, which
+        # the smoke test has no real use for.
+        docker run -d --name calcom-api-smoke --network stack \
+          -p 5555:5555 \
+          -e NODE_ENV=production \
+          -e API_PORT=5555 \
+          -e API_URL=http://localhost \
+          -e DATABASE_URL="$DB_URL" \
+          -e DATABASE_DIRECT_URL="$DB_URL" \
+          -e DATABASE_READ_URL="$DB_URL" \
+          -e DATABASE_WRITE_URL="$DB_URL" \
+          -e REDIS_URL=redis://redis:6379 \
+          -e NEXTAUTH_SECRET="$NEXTAUTH_SECRET" \
+          -e JWT_SECRET="$JWT_SECRET" \
+          -e STRIPE_API_KEY=sk_test_smoke \
+          -e STRIPE_WEBHOOK_SECRET=whsec_smoke \
+          -e LOG_LEVEL=info \
+          -e WEB_APP_URL=http://localhost:3000 \
+          "$tag"
+
+        dump_and_fail() {
+          echo "--- container logs ---"
+          docker logs calcom-api-smoke || true
+          docker rm -f calcom-api-smoke >/dev/null 2>&1 || true
+          exit 1
+        }
+
+        # Stage 1 -- the process is up. /health is @Version(VERSION_NEUTRAL), so
+        # it answers regardless of routing and proves only that Nest booted.
+        echo "Waiting for the API to start..."
+        code=""
+        for i in $(seq 1 60); do
+          code=$(curl -o /dev/null -s -w "%{http_code}" http://localhost:5555/health || true)
+          echo "  health check ($i/60): $code"
+          [ "$code" = "200" ] && break
+          sleep 5
+        done
+        if [ "$code" != "200" ]; then
+          echo "::error::API container never became healthy (last status: ${code:-none})"
+          dump_and_fail
+        fi
+
+        # Stage 2 -- the v2 routes are actually mounted. GET /v2/bookings is
+        # guarded by ApiAuthGuard, so an unauthenticated request must be
+        # *rejected*, not "not found". 401/403 proves the controller is mounted
+        # and the guard chain is wired; 404 proves it is not. Booting alone
+        # would pass stage 1 while serving no v2 routes at all.
+        echo "Checking that /v2/bookings is mounted..."
+        code=$(curl -o /dev/null -s -w "%{http_code}" http://localhost:5555/v2/bookings || true)
+        echo "  GET /v2/bookings -> $code"
+        case "$code" in
+          401|403)
+            echo "v2 routes are mounted (request rejected with $code as expected)"
+            ;;
+          404)
+            echo "::error::/v2/bookings returned 404 -- the v2 routes are not mounted in this image"
+            dump_and_fail
+            ;;
+          200)
+            echo "::error::/v2/bookings returned 200 without credentials -- the auth guard is not applied"
+            dump_and_fail
+            ;;
+          *)
+            echo "::error::/v2/bookings returned an unexpected status: ${code:-none}"
+            dump_and_fail
+            ;;
+        esac
+
+        docker rm -f calcom-api-smoke >/dev/null 2>&1 || true
+    - name: Push image
+      id: docker_push
+      uses: docker/build-push-action@v6
+      if: ${{ inputs.push-image == 'true' && !github.event.release.prerelease }}
+      with:
+        context: ./
+        file: ./apps/api/v2/Dockerfile
+        push: true
+        platforms: ${{ inputs.platform }}
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        build-args: |
+          DATABASE_URL=postgresql://${{ inputs.postgres-user }}:${{ inputs.postgres-password }}@${{ inputs.database-host }}/${{ inputs.postgres-db }}
+          DATABASE_DIRECT_URL=postgresql://${{ inputs.postgres-user }}:${{ inputs.postgres-password }}@${{ inputs.database-host }}/${{ inputs.postgres-db }}
+
+    - name: Image digest
+      shell: bash
+      run: echo ${{ steps.docker_build.outputs.digest }}
+
+    - name: Cleanup
+      shell: bash
+      if: always()
+      run: |
+        docker rm -f calcom-api-smoke >/dev/null 2>&1 || true
+        docker compose down

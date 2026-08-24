@@ -104,3 +104,27 @@ jobs:
           database-host: ${{ env.DATABASE_HOST }}
           push-image: ${{ (github.event_name == 'push' || inputs.PUSH_IMAGE) && 'true' || 'false' }}
           use-as-latest: "true"
+
+  release-api-amd64:
+    name: "Release API v2 AMD64"
+    needs: prepare
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.checkout_ref }}
+
+      - name: Build and test API v2 Docker image
+        uses: ./.github/actions/docker-build-and-test-api
+        with:
+          platform: "linux/amd64"
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          postgres-user: ${{ env.POSTGRES_USER }}
+          postgres-password: ${{ env.POSTGRES_PASSWORD }}
+          postgres-db: ${{ env.POSTGRES_DB }}
+          database-host: ${{ env.DATABASE_HOST }}
+          push-image: ${{ (github.event_name == 'push' || inputs.PUSH_IMAGE) && 'true' || 'false' }}
+          use-as-latest: "true"

@@ -1,14 +1,22 @@
 # Deploying cal.diy
 
-This fork tracks upstream [cal.com](https://github.com/calcom/cal.diy) and builds a
-single image, `ghcr.io/dokumentuj-sro/cal.diy`, serving <https://booking.dokumentuj.cz>.
+This fork tracks upstream [cal.com](https://github.com/calcom/cal.diy) and builds
+two images that are deployed together, serving <https://booking.dokumentuj.cz>:
+
+| Image | Built from | Serves |
+| --- | --- | --- |
+| `ghcr.io/dokumentuj-sro/cal.diy` | `./Dockerfile` | the Next.js web app |
+| `ghcr.io/dokumentuj-sro/cal.diy-api` | `apps/api/v2/Dockerfile` | the API v2 service, `/v2/*` |
+
+**They must be deployed at the same tag.** See "Both images, one tag" below for
+what breaks when they drift.
 
 We run exactly two CI workflows. Everything else upstream ships is removed on
 each sync:
 
 | Workflow | Trigger | Purpose |
 | --- | --- | --- |
-| `release-docker.yaml` | tag `v*`, or manual | Build, test and push the image (x86 only) |
+| `release-docker.yaml` | tag `v*`, or manual | Build, test and push both images (x86 only) |
 | `security-audit.yml` | Mondays 06:00 UTC, or manual | `yarn npm audit`; fails on critical CVEs |
 
 ## One-time setup
@@ -31,7 +39,7 @@ git remote add upstream https://github.com/calcom/cal.diy.git
 5. **Trigger the build**: push a tag (`git tag v6.0.5 && git push origin v6.0.5`),
    or run *Release Docker* from the Actions tab. The manual form takes a
    `RELEASE_TAG`, or `BUILD_FROM_BRANCH` to build the current branch instead.
-6. **Deploy the image** on the server — see below.
+6. **Deploy both images** on the server, at the same tag — see below.
 
 The script refuses to run on a branch other than `main`, with a dirty working
 tree, or without the `upstream` remote, and tells you how to fix each. Set
@@ -209,14 +217,70 @@ first: it forces a full major above the `^6.1.11` that `sqlite3` asks for. See
 the tar entry under "Patches we carry" for why the pin is raised rather than
 removed.
 
+## Both images, one tag
+
+`release-docker.yaml` builds the web and API images in two jobs that both
+`needs: prepare`. They take their tag and their checkout ref from that one job,
+so a given tag refers to the same commit in both images by construction. Nothing
+downstream re-derives it, and nothing needs to be kept in step by hand.
+
+**A deploy must move both images together.** Pulling one and leaving the other is
+the failure this section exists to prevent.
+
+### What breaks when they drift
+
+The two images are not peers. The web image owns the database schema: its
+`scripts/start.sh` runs `prisma migrate deploy` on every boot. The API image
+does not — `start:prod` is `node ./dist/apps/api/v2/src/main.js` and nothing
+else. Each image also carries a Prisma client generated from the schema as it
+stood in *its own* commit.
+
+That asymmetry decides what goes wrong:
+
+- **Newer web, older API.** The web container migrates the database forward on
+  startup. The API is now talking to a schema its generated client does not
+  match, and its queries reference columns that moved or no longer exist. The
+  API still boots cleanly, so nothing looks wrong until a `/v2` request touches
+  an affected table and returns a 500.
+- **Older web, newer API.** The database stays on the older schema, and the
+  newer API expects columns that were never created. Same class of failure, same
+  clean boot.
+
+Both directions fail *at request time, not at deploy time*, which is what makes
+drift worth preventing rather than detecting. A rollback of one image alone
+recreates the same condition.
+
+There is a second, more visible failure mode: the web image bakes
+`NEXT_PUBLIC_API_V2_URL` at build time, so the browser calls the API at a fixed
+URL. If the API image predates a route the web app now calls, the booking flow
+takes 404s from `/v2/*` — including `/v2/bookings`, which the integration
+depends on.
+
+### Checking what is deployed
+
+Both tags should match the git tag that produced them:
+
+```bash
+docker inspect --format '{{index .RepoTags 0}}' ghcr.io/dokumentuj-sro/cal.diy
+docker inspect --format '{{index .RepoTags 0}}' ghcr.io/dokumentuj-sro/cal.diy-api
+```
+
+If they disagree, deploy the newer tag to both rather than rolling the newer one
+back — the database has already been migrated by whichever web image ran last,
+and it does not migrate backwards.
+
 ## Server-side deploy
 
-> **TODO:** document how the built image is rolled out — whoever runs the deploy
-> should fill this in. The image to pull is `ghcr.io/dokumentuj-sro/cal.diy:<tag>`.
+> **TODO:** document how the built images are rolled out — whoever runs the
+> deploy should fill this in. The images to pull are
+> `ghcr.io/dokumentuj-sro/cal.diy:<tag>` and
+> `ghcr.io/dokumentuj-sro/cal.diy-api:<tag>`, at the **same** `<tag>`.
 
 ## Notes
 
-- Builds are x86 only; there is no ARM job.
+- Builds are x86 only; there is no ARM job. The web and API images build in
+  parallel as two jobs, both fanning out from `prepare`, so they always share a
+  release tag and a checkout ref.
 - The image is published to GHCR only — we do not push to Docker Hub.
 - Scheduled workflows only run from the default branch, and GitHub disables cron
   after 60 days of repo inactivity (it emails a warning first).
