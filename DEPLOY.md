@@ -72,6 +72,85 @@ caught up, drop ours instead of carrying it indefinitely.
   "just to be safe". It is an exact version, so once upstream moves past it the
   pin silently *downgrades* next-auth instead of protecting it.
 
+### tar pinned to 7.5.22 — an inherited pin that had rotted
+
+- **Package:** `tar`, pinned in root `resolutions`. We did not add this one; it
+  came in from upstream, at `7.5.11`.
+- **What happened:** `7.5.11` was presumably a security bump when it was added,
+  ahead of what the tree would otherwise resolve. Then
+  [GHSA-23hp-3jrh-7fpw](https://github.com/advisories/GHSA-23hp-3jrh-7fpw)
+  landed (vulnerable `<=7.5.18`) and made that exact version the flagged one.
+  The pin had turned from a floor into a ceiling, and was itself what held the
+  tree at a vulnerable `tar`.
+- **Resolved:** raised to `7.5.22` (fixed in 7.5.19+). This is a closed
+  incident, kept here for the lesson rather than as a live issue.
+- **Why raised and not removed.** Deleting the entry does *not* help: `sqlite3`
+  asks for `^6.1.11`, so `tar` would fall back to 6.x, which the advisory also
+  covers. The pin forces `tar` a full major above what `sqlite3` requests, but
+  that override was already in force at `7.5.11` — raising the value does not
+  add a new one.
+- **How it was caught matters.** The first run of the scheduled *Security Audit*
+  surfaced it. Nobody spotted it by reading `package.json`: a stale pin looks
+  exactly like a fresh one, and does not announce the day it starts doing the
+  opposite of its job. That is the entire reason the next-auth entry above
+  carries a per-sync check instead of trusting that a pin stays correct.
+
+### websocket-driver pinned to 0.7.5
+
+- **Package:** `websocket-driver`, pinned via root `resolutions`.
+- **Advisory:** [GHSA-xv26-6w52-cph6](https://github.com/advisories/GHSA-xv26-6w52-cph6),
+  critical — message corruption via abuse of protocol length headers.
+  Vulnerable `<0.7.5`.
+- **How it reaches us:** `faye-websocket` ← `faye` ← `@jsforce/jsforce-node`, a
+  `dependencies` entry of `packages/app-store/salesforce`. `jsforce` uses `faye`
+  for the Salesforce Streaming API, so this is genuine runtime network I/O, not
+  a build-time path.
+- **Why pinned rather than reasoned away:** the Salesforce app is dormant here —
+  it is only seeded and enabled when `SALESFORCE_CONSUMER_KEY` and
+  `SALESFORCE_CONSUMER_SECRET` are set, and its CRM service loads through a
+  dynamic import that runs only once a Salesforce credential exists. That makes
+  the code shipped-but-unloaded today. It is not a property worth depending on:
+  it stops being true the moment somebody enables the integration, and nothing
+  would flag that as a security decision. The pin removes the exposure outright.
+- **No override involved.** `faye-websocket` requests `>=0.5.1`, so `0.7.5`
+  satisfies it natively — this raises a floor rather than forcing a version past
+  what a package asked for.
+- **We deliberately did not remove the Salesforce app.** Deleting
+  `packages/app-store/salesforce/` would drop the dependency entirely, but the
+  app-store generator has no exclusion mechanism — it includes every directory
+  containing a `config.json` — so it would mean deleting a directory upstream
+  actively maintains and regenerating six barrel files on every sync. A
+  one-line pin costs far less than a carried patch that fights upstream forever.
+
+## Expected audit state
+
+`yarn npm audit --all --recursive --severity critical` is expected to pass
+clean: **zero criticals, exit 0.** The Monday *Security Audit* run should be
+green, and there is no standing list of tolerated findings.
+
+**So a red Monday email means something new.** There is no "that's just the
+usual two" to fall back on — treat it as a real finding:
+
+1. Read the advisory and check whether it reaches production.
+   `yarn npm audit --all --recursive --severity critical --environment production`
+   drops devDependencies, which is the quickest way to separate build-time noise
+   from live exposure.
+2. Prefer fixing it. Most of these are a one-line `resolutions` entry, and a
+   fix taken is one less thing to re-reason about every week.
+3. Only if it genuinely cannot be fixed, record it here with the reasoning —
+   and then this section is no longer accurate, so rewrite it. A list of
+   tolerated findings is worth far less than a green baseline.
+
+Judge "reaches production" from the dependency graph, not the package's
+reputation. Both criticals cleared in August 2026 looked build-time from their
+names and neither was: `tar` arrived through SAML SSO and `websocket-driver`
+through the Salesforce SDK.
+
+**Check on each sync** (for both pins above): if upstream has bumped either
+package to at least our pinned version, drop our entry and let upstream's carry
+it. If upstream has moved *past* it, drop ours too — an exact pin left behind is
+how the `tar` entry above became a vulnerability in the first place.
+
 ## Server-side deploy
 
 > **TODO:** document how the built image is rolled out — whoever runs the deploy
