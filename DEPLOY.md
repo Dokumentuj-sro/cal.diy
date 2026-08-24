@@ -35,7 +35,9 @@ git remote add upstream https://github.com/calcom/cal.diy.git
 
 The script refuses to run on a branch other than `main`, with a dirty working
 tree, or without the `upstream` remote, and tells you how to fix each. Set
-`ALLOW_ANY_BRANCH=1` to sync into a branch deliberately.
+`ALLOW_ANY_BRANCH=1` to sync into a branch deliberately. If the tree is dirty
+and you did not edit anything, see "Running yarn install locally" below — a
+failed install can leave a tracked file zeroed.
 
 ## Patches we carry on top of upstream
 
@@ -150,6 +152,62 @@ through the Salesforce SDK.
 package to at least our pinned version, drop our entry and let upstream's carry
 it. If upstream has moved *past* it, drop ours too — an exact pin left behind is
 how the `tar` entry above became a vulnerability in the first place.
+
+## Running yarn install locally
+
+The root `postinstall` runs `prisma generate && prisma format` across the
+monorepo through turbo. That is fine on a clean run, and has one sharp edge
+when a run is not clean.
+
+### An interrupted install can zero schema.prisma
+
+If the postinstall pipeline dies partway — an unrelated package failing its own
+build, or the install being interrupted — `prisma format` can be killed
+mid-write and leave `packages/prisma/schema.prisma` **truncated to zero bytes**.
+On a run that completes normally it only rewrites line endings, which is
+harmless. The destructive case needs an aborted run.
+
+Recognise it by any of:
+
+- `packages/prisma/schema.prisma` is 0 bytes. It should be ~2850 lines, ~100 KB.
+- The next command that touches Prisma fails with
+  `You don't have any datasource defined in your schema.prisma`.
+- `git status` lists `packages/prisma/schema.prisma` as modified when you did
+  not edit it.
+
+The fix is to restore the tracked copy:
+
+```bash
+git checkout -- packages/prisma/schema.prisma
+```
+
+**Check `git status` after any `yarn install` that did not exit cleanly.** The
+file is tracked, so nothing is lost permanently — but only if you notice before
+building on top of it.
+
+Yarn's exit code is easy to lose here. If you pipe the install through `tail`
+or chain another command after it, you get that command's exit status rather
+than yarn's, and a failed install reads as a success. Look for
+`Failed with errors` in the output instead of trusting a `0`.
+
+This also reaches the sync ritual: `sync-upstream.sh` refuses to run on a dirty
+tree, so a zeroed schema does not announce itself — it resurfaces later as a
+blocked sync whose error message says nothing about Prisma.
+
+### A local install does not prove the native build
+
+`sqlite3@5.1.7` compiled here against `tar` 7.5.11 and was **not** rebuilt when
+the pin moved to 7.5.22; the package itself did not change, so yarn had no
+reason to rebuild it. `sqlite3` reaches `tar` through `prebuild-install` to
+unpack prebuilt binaries at install time, and that path only runs on a clean
+install.
+
+**The CI Docker build is what proves it.** If *Release Docker* passes, the
+combination is good. If it fails inside a native module — `sqlite3`,
+`node-gyp`, or anything unpacking a prebuilt binary — suspect the `tar` pin
+first: it forces a full major above the `^6.1.11` that `sqlite3` asks for. See
+the tar entry under "Patches we carry" for why the pin is raised rather than
+removed.
 
 ## Server-side deploy
 
