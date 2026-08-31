@@ -405,7 +405,7 @@ class GoogleCalendarService implements Calendar {
       const evt = await calendar.events.update({
         calendarId: selectedCalendar,
         eventId: uid,
-        sendNotifications: true,
+        sendNotifications: false,
         sendUpdates: "none",
         requestBody: payload,
         conferenceDataVersion: 1,
