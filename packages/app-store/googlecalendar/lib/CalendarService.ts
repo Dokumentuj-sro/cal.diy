@@ -296,26 +296,48 @@ class GoogleCalendarService implements Calendar {
       }
 
       if (event && event.id && event.hangoutLink) {
-        await calendar.events.patch({
-          // Update the same event but this time we know the hangout link
-          calendarId: selectedCalendar,
-          eventId: event.id || "",
-          requestBody: {
-            description: getRichDescription({
-              ...calEvent,
-              additionalInformation: { hangoutLink: event.hangoutLink },
-            }),
-            location: getLocation({
-              videoCallData: calEvent.videoCallData,
-              additionalInformation: {
-                ...calEvent.additionalInformation,
-                hangoutLink: event.hangoutLink,
-              },
-              location: calEvent.location,
-              uid: calEvent.uid,
-            }),
-          },
-        });
+        // NON-FATAL (dokumentuj patch 2026-09-02). This PATCH is cosmetic: the event ALREADY
+        // exists and already carries `hangoutLink` from the insert above, so Google Calendar
+        // shows "Join with Google Meet" either way. All it adds is the link inside the
+        // description/location text.
+        //
+        // Google throttles rapid successive writes to the SAME freshly-created event and
+        // answers 403 "Rate Limit Exceeded" — intermittently, at ~40% for us, and completely
+        // independently of project quota (ours sat at 0% of 10k qpm while this fired). Gaxios
+        // does not retry it either: `statusCodesToRetry` is [[100,199],[429,429],[500,599]]
+        // and `httpMethodsToRetry` omits PATCH.
+        //
+        // Letting it throw used to abort the whole createEvent, so EventManager marked the
+        // booking failed and Cal SKIPPED EVERY NOTIFICATION — host and attendee both. The
+        // meeting sat in the calendar with nobody told: 5 of 11 real bookings between
+        // 2026-08-31 and 2026-09-02. Losing one line of description text is the smaller loss.
+        try {
+          await calendar.events.patch({
+            // Update the same event but this time we know the hangout link
+            calendarId: selectedCalendar,
+            eventId: event.id || "",
+            requestBody: {
+              description: getRichDescription({
+                ...calEvent,
+                additionalInformation: { hangoutLink: event.hangoutLink },
+              }),
+              location: getLocation({
+                videoCallData: calEvent.videoCallData,
+                additionalInformation: {
+                  ...calEvent.additionalInformation,
+                  hangoutLink: event.hangoutLink,
+                },
+                location: calEvent.location,
+                uid: calEvent.uid,
+              }),
+            },
+          });
+        } catch (patchError) {
+          this.log.warn(
+            "Cosmetic post-insert patch failed; event exists and keeps its hangoutLink, continuing: ",
+            safeStringify({ patchError, eventId: event.id, selectedCalendar })
+          );
+        }
       }
 
       return {
