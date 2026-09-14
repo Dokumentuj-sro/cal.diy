@@ -82,6 +82,56 @@ caught up, drop ours instead of carrying it indefinitely.
   "just to be safe". It is an exact version, so once upstream moves past it the
   pin silently *downgrades* next-auth instead of protecting it.
 
+### next pinned to 16.3.3 (and 15.5.24)
+
+- **Package:** `next`, pinned through three descriptor-scoped entries in root
+  `resolutions`:
+
+  | Entry | Replaces | Who asks for it |
+  | --- | --- | --- |
+  | `next@16.2.3` → `16.3.3` | 16.2.3 | `apps/web` (**production**), `packages/platform/examples/base` |
+  | `next@15.5.15` → `15.5.24` | 15.5.15 | `example-apps/credential-sync` |
+  | `next@^15.1.0` → `15.5.24` | 15.5.15 | `apps/docs` |
+
+- **Advisories:** both critical, both covering 16.x `<16.3.3` and 15.x
+  `<15.5.24`.
+  - [GHSA-2xp9-vwfh-vxw4](https://github.com/advisories/GHSA-2xp9-vwfh-vxw4):
+    unauthenticated RCE through the Image Optimization API when AVIF files are
+    involved. **This is the one that matters.** `apps/web` is what serves
+    booking.dokumentuj.cz, and the image optimizer is reachable without logging
+    in.
+  - [GHSA-p293-qw3h-jr36](https://github.com/advisories/GHSA-p293-qw3h-jr36):
+    unauthenticated RCE on Windows-hosted servers. We run Linux containers, so
+    this does not reach production. It is fixed by the same release anyway.
+- **Why we carry it:** as of September 2026, upstream `main`, its latest tag
+  (`v6.2.0`, still on 16.1.5), and its `chore/bump-nextjs` branch are all below
+  16.3.3. There was nothing to sync.
+- **Why the 15.x entries too:** `apps/docs` and `credential-sync` are not
+  deployed. They still kept the audit red, and 15.5.15 → 15.5.24 is a patch
+  bump inside the line they already ask for, so fixing them cost less than
+  documenting an exception. That keeps the audit green (see "Expected audit
+  state").
+- **Why scoped by descriptor instead of a bare `"next"`:** a bare entry would
+  force every workspace, including the 15.x ones, onto a single version. Keying
+  on the exact version being replaced also makes the pins **self-expiring**. Once
+  upstream changes `apps/web` to anything other than `16.2.3`, the entry stops
+  matching and does nothing. It cannot silently downgrade next the way an
+  unscoped pin can (compare the next-auth note above and the tar entry below).
+  The cost is the reverse: if upstream moves to another *vulnerable* version,
+  nothing here catches it. The audit does.
+- **Check on each sync:**
+
+  ```bash
+  grep '"next"' apps/web/package.json packages/platform/examples/base/package.json \
+    apps/docs/package.json example-apps/credential-sync/package.json
+  ```
+
+  Drop any entry whose left-hand version no longer appears there, because it is
+  already inert. Then run `yarn install` and confirm
+  `yarn npm audit --all --recursive --severity critical` does not mention next.
+  If upstream reaches ≥16.3.3 in `apps/web`, the 16.x entry is dead weight;
+  remove it.
+
 ### tar pinned to 7.5.22 — an inherited pin that had rotted
 
 - **Package:** `tar`, pinned in root `resolutions`. We did not add this one; it
@@ -156,7 +206,8 @@ reputation. Both criticals cleared in August 2026 looked build-time from their
 names and neither was: `tar` arrived through SAML SSO and `websocket-driver`
 through the Salesforce SDK.
 
-**Check on each sync** (for both pins above): if upstream has bumped either
+**Check on each sync** (for the exact-version pins above; the next entries have
+their own check): if upstream has bumped a pinned
 package to at least our pinned version, drop our entry and let upstream's carry
 it. If upstream has moved *past* it, drop ours too — an exact pin left behind is
 how the `tar` entry above became a vulnerability in the first place.
