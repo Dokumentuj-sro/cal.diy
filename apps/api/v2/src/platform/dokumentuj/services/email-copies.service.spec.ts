@@ -53,7 +53,7 @@ describe("EmailCopiesService", () => {
       {
         id: 3,
         bookingUid: "uid-a",
-        type: "potvrzeno",
+        type: "potvrzeni",
         recipient: "jan@example.cz",
         subject: "Potvrzeno",
         html: "<p>x</p>",
@@ -80,7 +80,7 @@ describe("EmailCopiesService", () => {
       {
         id: 3,
         bookingUid: "uid-a",
-        type: "potvrzeno",
+        type: "potvrzeni",
         recipient: "jan@example.cz",
         subject: "Potvrzeno",
         html: "<p>x</p>",

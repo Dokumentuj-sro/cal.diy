@@ -14,7 +14,7 @@ export class EmailCopyOutput {
   bookingUid!: string;
 
   @IsString()
-  @ApiProperty({ description: "Archive type of the e-mail (e.g. potvrzeno, zruseno, presunuto)" })
+  @ApiProperty({ description: "Archive type of the e-mail (e.g. potvrzeni, prelozeno, zruseno, ostatni)" })
   type!: string;
 
   @IsString()
