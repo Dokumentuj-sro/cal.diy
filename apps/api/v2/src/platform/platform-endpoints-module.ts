@@ -1,6 +1,7 @@
 import { BookingsModule_2024_04_15 } from "@/platform/bookings/2024-04-15/bookings.module";
 import { BookingsModule_2024_08_13 } from "@/platform/bookings/2024-08-13/bookings.module";
 import { CalendarsModule } from "@/platform/calendars/calendars.module";
+import { DokumentujModule } from "@/platform/dokumentuj/dokumentuj.module";
 import { EventTypesPrivateLinksModule } from "@/platform/event-types-private-links/event-types-private-links.module";
 import { EventTypesModule_2024_04_15 } from "@/platform/event-types/event-types_2024_04_15/event-types.module";
 import { EventTypesModule_2024_06_14 } from "@/platform/event-types/event-types_2024_06_14/event-types.module";
@@ -29,6 +30,7 @@ import { Module } from "@nestjs/common";
     SlotsModule_2024_04_15,
     SlotsModule_2024_09_04,
     EventTypesPrivateLinksModule,
+    DokumentujModule,
   ],
 })
 export class PlatformEndpointsModule implements NestModule {

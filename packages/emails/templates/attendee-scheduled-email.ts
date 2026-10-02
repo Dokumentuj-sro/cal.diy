@@ -9,6 +9,7 @@ import renderEmail from "../src/renderEmail";
 import BaseEmail from "./_base-email";
 
 export default class AttendeeScheduledEmail extends BaseEmail {
+  protected archiveType = "potvrzeni";
   calEvent: CalendarEvent;
   attendee: Person;
   showAttendees: boolean | undefined;

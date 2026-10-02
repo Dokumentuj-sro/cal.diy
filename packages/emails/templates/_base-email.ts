@@ -9,10 +9,15 @@ import { getServerErrorFromUnknown } from "@calcom/lib/server/getServerErrorFrom
 import { setTestEmail } from "@calcom/lib/testEmails";
 import { prisma } from "@calcom/prisma";
 
+import { archiveCopy } from "../lib/archiveCopy";
 import { sanitizeDisplayName } from "../lib/sanitizeDisplayName";
 
 export default class BaseEmail {
   name = "";
+  // Fork-only (ADR-0066): `this.name` (e.g. SEND_BOOKING_CONFIRMATION) is inherited by
+  // subclasses as-is, so reschedule/cancel/etc. would share the confirmation's name.
+  // Each template therefore carries its own archiveType.
+  protected archiveType = "ostatni";
 
   protected getTimezone() {
     return "";
@@ -82,6 +87,10 @@ export default class BaseEmail {
             reject(err);
           } else {
             resolve(info);
+            void archiveCopy(prisma, payloadWithUnEscapedSubject, {
+              bookingUid: (this as { calEvent?: { uid?: string | null } }).calEvent?.uid ?? "",
+              type: this.archiveType,
+            });
           }
         }
       )
