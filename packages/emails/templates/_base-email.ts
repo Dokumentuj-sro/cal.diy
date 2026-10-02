@@ -9,10 +9,15 @@ import { getServerErrorFromUnknown } from "@calcom/lib/server/getServerErrorFrom
 import { setTestEmail } from "@calcom/lib/testEmails";
 import { prisma } from "@calcom/prisma";
 
+import { archiveCopy } from "../lib/archiveCopy";
 import { sanitizeDisplayName } from "../lib/sanitizeDisplayName";
 
 export default class BaseEmail {
   name = "";
+  // Fork-only (ADR-0066): the archive type for this email, written alongside the Cal
+  // type (SEND_BOOKING_CONFIRMATION, ...) is not specific enough — reschedule/cancel
+  // inherit it from the confirmation template. Attendee templates override this.
+  protected archiveType = "ostatni";
 
   protected getTimezone() {
     return "";
@@ -82,6 +87,10 @@ export default class BaseEmail {
             reject(err);
           } else {
             resolve(info);
+            void archiveCopy(prisma, payloadWithUnEscapedSubject, {
+              bookingUid: (this as { calEvent?: { uid?: string | null } }).calEvent?.uid ?? "",
+              type: this.archiveType,
+            });
           }
         }
       )
