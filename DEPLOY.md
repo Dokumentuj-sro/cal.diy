@@ -182,6 +182,52 @@ caught up, drop ours instead of carrying it indefinitely.
   actively maintains and regenerating six barrel files on every sync. A
   one-line pin costs far less than a carried patch that fights upstream forever.
 
+## Booking e-mail archive (Dokumentuj)
+
+This one is not a patch waiting for upstream to catch up. It is our own feature
+and we carry it permanently. The Dokumentuj app shows each company the booking
+e-mails Cal sent its customers (leadapp ADR-0066), so the fork keeps a copy of
+each such e-mail and serves it back to the rep who owns the booking.
+
+- **Capture.** After a successful send, `BaseEmail.sendEmail`
+  (`packages/emails/templates/_base-email.ts`) calls `archiveCopy`
+  (`packages/emails/lib/archiveCopy.ts`) without awaiting it. A copy is stored
+  only when the e-mail belongs to a booking and at least one recipient is not a
+  Cal user, so e-mails that go only to the organizer are skipped. The type comes
+  from each attendee template's own one-line `archiveType`. It can't come from
+  `this.name`, because reschedule and cancel inherit that from the confirmation.
+  A template without an `archiveType` is archived as `ostatni`. A failed write is
+  logged as `EMAIL_ARCHIVE_ERROR` and never fails the send.
+- **Migration.** `20261002120000_email_archive_copy` adds the
+  `EmailArchiveCopy` table. It has no foreign key to `Booking`; copies are matched
+  to bookings by uid in code. The migration is additive, and the web image
+  applies it on start like any other migration.
+- **30-day prune.** Each `archiveCopy` call also deletes copies older than 30
+  days. Cal only holds copies until the app picks them up (the app keeps the
+  real archive), and nothing else cleans this table. When Cal sends no e-mails
+  for a while, the old rows wait for the next send.
+- **Endpoint.** `GET /v2/dokumentuj/email-copies?afterId=<id>&take=<n>` is served
+  by the API image and authenticated with the rep's API key (`ApiAuthGuard`).
+  It accepts any `cal-api-version`; the app sends `2024-08-13`. It returns copies
+  with `id > afterId`, oldest first, **only for bookings whose organizer
+  (`Booking.userId`) is the key owner**. That is the same scoping as
+  `/v2/bookings`. `take` defaults to 25 and is clamped to 50, because each copy
+  carries the full HTML. The organizer filter runs inside the SQL query, so a
+  page shorter than `take` means there are no more copies. Each item is
+  `{ id, bookingUid, type, recipient, subject, html, text, sentAt, leadId }`,
+  where `leadId` is the booking's `metadata.lead_id` as a string, or `""` when it
+  has none. Copies whose booking was deleted are not returned.
+
+Deploy order: **Cal first, then the app.** The app treats a missing endpoint as
+"nothing yet", so if the app is ahead of Cal it pulls nothing but keeps working.
+Both images still go out at one tag: the migration ships in the web image and
+the endpoint in the API image.
+
+**On every upstream sync, check `_base-email.ts` and `schema.prisma`.** These two
+files are the most likely to conflict. Keep the `archiveCopy` call in
+`sendEmail` and the `EmailArchiveCopy` model. When upstream adds a new attendee
+e-mail template, give it an `archiveType`, or accept that it lands as `ostatni`.
+
 ## Expected audit state
 
 `yarn npm audit --all --recursive --severity critical` is expected to pass
