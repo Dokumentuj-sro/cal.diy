@@ -2850,7 +2850,7 @@ model AttributeSyncFieldMapping {
   @@index([integrationAttributeSyncId])
 }
 
-// Fork-only (ADR-0066): a staging copy of every booking email Cal sends to an external
+// Fork-only (ADR-0067): a staging copy of every booking email Cal sends to an external
 // recipient, pulled by the app's own fork endpoint. No relation to Booking, so a deleted
 // booking never blocks the copy. Cal only keeps these for 30 days (see archiveCopy.ts).
 model EmailArchiveCopy {

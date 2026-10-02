@@ -1,6 +1,6 @@
 import type { PrismaClient } from "@calcom/prisma";
 
-// Fork-only (ADR-0066): a staging copy of every booking email Cal sends to an external
+// Fork-only (ADR-0067): a staging copy of every booking email Cal sends to an external
 // (non-Cal-user) recipient. The app pulls copies via its own endpoint; Cal only keeps them
 // for THIRTY_DAYS_MS before deleting them, so a cleanup pass piggybacks on every call here.
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
@@ -39,7 +39,7 @@ export function extractAddresses(to: string): string[] {
 
 /**
  * True iff there is a booking to attach the copy to AND at least one recipient
- * address is not a Cal user (i.e. the email went "outside", per ADR-0066 point 2).
+ * address is not a Cal user (i.e. the email went "outside", per ADR-0067 point 2).
  */
 export function shouldArchive({
   bookingUid,

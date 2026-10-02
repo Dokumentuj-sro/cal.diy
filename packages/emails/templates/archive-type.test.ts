@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { CalendarEvent, Person } from "@calcom/types/Calendar";
 
-// Fork-only (ADR-0066): archiveType must be a class field on each attendee template,
+// Fork-only (ADR-0067): archiveType must be a class field on each attendee template,
 // not `this.name` — reschedule/cancel otherwise inherit SEND_BOOKING_CONFIRMATION's
 // type from the scheduled template they extend. Mocks mirror email-manager.test.ts.
 vi.mock("@calcom/prisma", () => ({

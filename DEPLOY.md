@@ -186,7 +186,7 @@ caught up, drop ours instead of carrying it indefinitely.
 
 This one is not a patch waiting for upstream to catch up. It is our own feature
 and we carry it permanently. The Dokumentuj app shows each company the booking
-e-mails Cal sent its customers (leadapp ADR-0066), so the fork keeps a copy of
+e-mails Cal sent its customers (leadapp ADR-0067), so the fork keeps a copy of
 each such e-mail and serves it back to the rep who owns the booking.
 
 - **Capture.** After a successful send, `BaseEmail.sendEmail`
