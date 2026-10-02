@@ -865,8 +865,54 @@ describe("createEvent", () => {
     expect(patchCall.eventId).toBe("mock-event-with-hangout");
     expect(patchCall.requestBody.location).toBe(mockHangoutLink);
     expect(patchCall.requestBody.description).toBeDefined();
+    // dokumentuj: without this Google mails attendees a 2nd "Updated invitation" from the host
+    expect(patchCall.sendUpdates).toBe("none");
 
     log.info("createEvent with hangoutLink patch test passed");
+  });
+
+  test("should patch matching instance of an existing recurring event without notifying attendees", async () => {
+    const calendarService = BuildCalendarService(mockCredential);
+    setFullMockOAuthManagerRequest();
+
+    const mockInstance = {
+      id: "recurring-event-id_20240615T100000Z",
+      start: { dateTime: "2024-06-15T10:00:00Z", timeZone: "UTC" },
+      end: { dateTime: "2024-06-15T11:00:00Z", timeZone: "UTC" },
+    };
+    const eventsInsertMock = vi.fn();
+    const eventsPatchMock = vi.fn().mockResolvedValue({ data: mockInstance });
+
+    calendarMock.calendar_v3.Calendar().events.insert = eventsInsertMock;
+    calendarMock.calendar_v3.Calendar().events.patch = eventsPatchMock;
+    calendarMock.calendar_v3.Calendar().events.instances = vi.fn().mockResolvedValue({
+      data: { items: [mockInstance] },
+    });
+
+    const testCalEvent = {
+      type: "recurring-meeting",
+      title: "Weekly Meeting",
+      startTime: "2024-06-15T10:00:00Z",
+      endTime: "2024-06-15T11:00:00Z",
+      organizer: {
+        id: 1,
+        name: "Organizer",
+        email: "organizer@example.com",
+        timeZone: "UTC",
+        language: { translate: (...args: any[]) => args[0], locale: "en" },
+      },
+      attendees: [],
+      existingRecurringEvent: { recurringEventId: "recurring-event-id" },
+      calendarDescription: "Weekly team meeting",
+    };
+
+    await calendarService.createEvent(testCalEvent, mockCredential.id);
+
+    expect(eventsInsertMock).not.toHaveBeenCalled();
+    expect(eventsPatchMock).toHaveBeenCalledTimes(1);
+    const patchCall = eventsPatchMock.mock.calls[0][0];
+    expect(patchCall.eventId).toBe("recurring-event-id_20240615T100000Z");
+    expect(patchCall.sendUpdates).toBe("none");
   });
 });
 
@@ -936,6 +982,7 @@ describe("updateEvent", () => {
     expect(patchCall.eventId).toBe("existing-event-id");
     expect(patchCall.requestBody.location).toBe(mockHangoutLink);
     expect(patchCall.requestBody.description).toBeDefined();
+    expect(patchCall.sendUpdates).toBe("none");
 
     // Verify result includes hangoutLink in additionalInfo
     expect(result.additionalInfo?.hangoutLink).toBe(mockHangoutLink);

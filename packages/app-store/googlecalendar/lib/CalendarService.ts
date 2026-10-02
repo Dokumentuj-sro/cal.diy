@@ -268,6 +268,7 @@ class GoogleCalendarService implements Calendar {
           await calendar.events.patch({
             calendarId: selectedCalendar,
             eventId: event.id || "",
+            sendUpdates: "none",
             requestBody: {
               location: getLocation({
                 videoCallData: calEvent.videoCallData,
@@ -311,11 +312,16 @@ class GoogleCalendarService implements Calendar {
         // booking failed and Cal SKIPPED EVERY NOTIFICATION — host and attendee both. The
         // meeting sat in the calendar with nobody told: 5 of 11 real bookings between
         // 2026-08-31 and 2026-09-02. Losing one line of description text is the smaller loss.
+        //
+        // `sendUpdates: "none"` (dokumentuj patch 2026-10-02): without it Google mails every
+        // attendee a second "Updated invitation" from the host right after Cal's own
+        // confirmation. Cal sends all notifications itself, same as the insert above.
         try {
           await calendar.events.patch({
             // Update the same event but this time we know the hangout link
             calendarId: selectedCalendar,
             eventId: event.id || "",
+            sendUpdates: "none",
             requestBody: {
               description: getRichDescription({
                 ...calEvent,
@@ -443,6 +449,7 @@ class GoogleCalendarService implements Calendar {
           // Update the same event but this time we know the hangout link
           calendarId: selectedCalendar,
           eventId: evt.data.id || "",
+          sendUpdates: "none",
           requestBody: {
             description: getRichDescription({
               ...event,
