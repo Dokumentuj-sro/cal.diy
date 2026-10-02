@@ -36,10 +36,20 @@ git remote add upstream https://github.com/calcom/cal.diy.git
 3. **Re-check the patches we carry** (see below) — upstream may have caught up,
    in which case ours should be dropped rather than carried forever.
 4. **Review**, then `git push`.
-5. **Trigger the build**: push a tag (`git tag v6.0.5 && git push origin v6.0.5`),
-   or run *Release Docker* from the Actions tab. The manual form takes a
+5. **Trigger the build**: push a tag (see "Tag naming" below), or run
+   *Release Docker* from the Actions tab. The manual form takes a
    `RELEASE_TAG`, or `BUILD_FROM_BRANCH` to build the current branch instead.
 6. **Deploy both images** on the server, at the same tag — see below.
+
+### Tag naming
+
+`v<upstream version>-dokumentuj.<n>` — e.g. `v6.2.0-dokumentuj.1`. The upstream
+version is the one in `apps/web/package.json` (the base we merged); `<n>` counts
+our own releases on that base and restarts at 1 after each upstream sync. Never
+tag a bare `v6.x.y` (that name belongs to upstream and already exists in this
+repo) and never reuse a leadapp version — the lone `v3.0.3-beta` tag is a
+leftover from before this scheme. Every tag also moves `:latest`, which is what
+the server's compose file pulls.
 
 The script refuses to run on a branch other than `main`, with a dirty working
 tree, or without the `upstream` remote, and tells you how to fix each. Set
@@ -368,10 +378,18 @@ and it does not migrate backwards.
 
 ## Server-side deploy
 
-> **TODO:** document how the built images are rolled out — whoever runs the
-> deploy should fill this in. The images to pull are
-> `ghcr.io/dokumentuj-sro/cal.diy:<tag>` and
-> `ghcr.io/dokumentuj-sro/cal.diy-api:<tag>`, at the **same** `<tag>`.
+The Cal box (`michael@100.83.68.103`, tailnet) runs the compose project in
+`~/cal`, which pins both images to `:latest`. After the release workflow is
+green:
+
+```bash
+cd ~/cal
+docker compose pull calcom calcom-api
+docker compose up -d calcom calcom-api   # not `restart` — only `up` picks up a new image/env
+```
+
+The web image migrates the database on boot. Then check both images carry the
+same build (see "Checking what is deployed").
 
 ## Notes
 
