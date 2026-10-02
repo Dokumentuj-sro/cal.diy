@@ -7,6 +7,7 @@ import renderEmail from "../src/renderEmail";
 import OrganizerScheduledEmail from "./organizer-scheduled-email";
 
 export default class AttendeeWasRequestedToRescheduleEmail extends OrganizerScheduledEmail {
+  protected archiveType = "zadost_o_prelozeni";
   private metadata: { rescheduleLink: string };
   constructor(calEvent: CalendarEvent, metadata: { rescheduleLink: string }) {
     super({ calEvent });
