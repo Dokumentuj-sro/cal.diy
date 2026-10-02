@@ -37,6 +37,14 @@ describe("extractAddresses", () => {
   it("keeps a quoted comma-containing name intact in a longer list", () => {
     expect(extractAddresses('"Novák, Jan" <jan@x.cz>, bob@b.cz')).toEqual(["jan@x.cz", "bob@b.cz"]);
   });
+
+  it("does not drop a trailing address when a quote is unbalanced", () => {
+    expect(extractAddresses('Jan" <jan@x.cz>, bob@b.cz')).toEqual(["jan@x.cz", "bob@b.cz"]);
+  });
+
+  it("de-dupes when a display name itself contains an '@'", () => {
+    expect(extractAddresses('"jan@x.cz" <jan@x.cz>')).toEqual(["jan@x.cz"]);
+  });
 });
 
 describe("shouldArchive", () => {

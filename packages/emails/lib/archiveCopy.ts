@@ -5,47 +5,36 @@ import type { PrismaClient } from "@calcom/prisma";
 // for THIRTY_DAYS_MS before deleting them, so a cleanup pass piggybacks on every call here.
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
-/** Splits on commas, except for commas inside a double-quoted display name. */
-function splitRespectingQuotes(value: string): string[] {
-  const parts: string[] = [];
-  let current = "";
-  let inQuotes = false;
-
-  for (const char of value) {
-    if (char === '"') {
-      inQuotes = !inQuotes;
-      current += char;
-    } else if (char === "," && !inQuotes) {
-      parts.push(current);
-      current = "";
-    } else {
-      current += char;
-    }
-  }
-  parts.push(current);
-
-  return parts;
-}
+// Matches an email-shaped token anywhere in the header: a run of characters that
+// aren't whitespace, <, >, ", a comma, or a semicolon, on either side of an '@'.
+const EMAIL_TOKEN_PATTERN = /[^\s<>",;]+@[^\s<>",;]+/g;
 
 /**
- * Parses a nodemailer `to` header into lower-cased bare addresses.
- * Handles `"Name <a@b.cz>"`, comma-separated lists (including a quoted display name
- * that itself contains a comma, e.g. `"Novák, Jan" <jan@x.cz>`), bare addresses, and a
- * stray `<`/`>` with no matching pair — a pre-existing upstream bug in a couple of
- * organizer templates builds `to` as `${email}>` with no `<` at all.
+ * Parses a nodemailer `to` header into lower-cased, de-duplicated bare addresses, in
+ * the order they first appear. Scans the whole header for email-shaped tokens instead
+ * of splitting on commas and stripping `<...>` — that earlier approach lost addresses
+ * entirely on malformed input, e.g. an unbalanced quote (`'Jan" <jan@x.cz>, bob@b.cz'`)
+ * swallowed everything after the stray `"`. A single scan can't drop a trailing
+ * address no matter how the header is malformed; it also handles a stray `<`/`>` with
+ * no matching pair (a pre-existing upstream bug in a couple of organizer templates
+ * builds `to` as `${email}>` with no `<` at all) and a display name that itself
+ * contains an `@` (it matches twice but de-dupes to one address).
  */
 export function extractAddresses(to: string): string[] {
   if (!to) return [];
 
-  return splitRespectingQuotes(to)
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .map((part) => {
-      const match = part.match(/<(.+)>/);
-      const candidate = match ? match[1] : part;
-      return candidate.replace(/[<>]/g, "").trim().toLowerCase();
-    })
-    .filter(Boolean);
+  const seen = new Set<string>();
+  const addresses: string[] = [];
+
+  for (const match of to.match(EMAIL_TOKEN_PATTERN) ?? []) {
+    const address = match.toLowerCase();
+    if (!seen.has(address)) {
+      seen.add(address);
+      addresses.push(address);
+    }
+  }
+
+  return addresses;
 }
 
 /**
