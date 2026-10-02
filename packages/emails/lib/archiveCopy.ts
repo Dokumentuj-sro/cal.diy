@@ -5,27 +5,6 @@ import type { PrismaClient } from "@calcom/prisma";
 // for THIRTY_DAYS_MS before deleting them, so a cleanup pass piggybacks on every call here.
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 
-/**
- * Parses a nodemailer `to` header into lower-cased bare addresses.
- * Handles `"Name <a@b.cz>"`, comma-separated lists (including a quoted display name
- * that itself contains a comma, e.g. `"Novák, Jan" <jan@x.cz>`), bare addresses, and a
- * stray `<`/`>` with no matching pair — a pre-existing upstream bug in a couple of
- * organizer templates builds `to` as `${email}>` with no `<` at all.
- */
-export function extractAddresses(to: string): string[] {
-  if (!to) return [];
-
-  return splitRespectingQuotes(to)
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .map((part) => {
-      const match = part.match(/<(.+)>/);
-      const candidate = match ? match[1] : part;
-      return candidate.replace(/[<>]/g, "").trim().toLowerCase();
-    })
-    .filter(Boolean);
-}
-
 /** Splits on commas, except for commas inside a double-quoted display name. */
 function splitRespectingQuotes(value: string): string[] {
   const parts: string[] = [];
@@ -46,6 +25,27 @@ function splitRespectingQuotes(value: string): string[] {
   parts.push(current);
 
   return parts;
+}
+
+/**
+ * Parses a nodemailer `to` header into lower-cased bare addresses.
+ * Handles `"Name <a@b.cz>"`, comma-separated lists (including a quoted display name
+ * that itself contains a comma, e.g. `"Novák, Jan" <jan@x.cz>`), bare addresses, and a
+ * stray `<`/`>` with no matching pair — a pre-existing upstream bug in a couple of
+ * organizer templates builds `to` as `${email}>` with no `<` at all.
+ */
+export function extractAddresses(to: string): string[] {
+  if (!to) return [];
+
+  return splitRespectingQuotes(to)
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const match = part.match(/<(.+)>/);
+      const candidate = match ? match[1] : part;
+      return candidate.replace(/[<>]/g, "").trim().toLowerCase();
+    })
+    .filter(Boolean);
 }
 
 /**
