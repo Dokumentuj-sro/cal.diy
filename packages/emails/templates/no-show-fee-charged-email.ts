@@ -4,6 +4,8 @@ import renderEmail from "../src/renderEmail";
 import AttendeeScheduledEmail from "./attendee-scheduled-email";
 
 export default class NoShowFeeChargedEmail extends AttendeeScheduledEmail {
+  protected archiveType = "ostatni";
+
   protected async getNodeMailerPayload(): Promise<Record<string, unknown>> {
     if (!this.calEvent.paymentInfo?.amount) throw new Error("No payment into");
     return {

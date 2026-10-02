@@ -25,6 +25,18 @@ describe("extractAddresses", () => {
   it("returns an empty array for an empty string", () => {
     expect(extractAddresses("")).toEqual([]);
   });
+
+  it("strips a stray trailing '>' with no matching '<' (upstream organizer-daily-video bug)", () => {
+    expect(extractAddresses("org@x.cz>")).toEqual(["org@x.cz"]);
+  });
+
+  it("keeps a quoted display name containing a comma as a single address", () => {
+    expect(extractAddresses('"Novák, Jan" <jan@x.cz>')).toEqual(["jan@x.cz"]);
+  });
+
+  it("keeps a quoted comma-containing name intact in a longer list", () => {
+    expect(extractAddresses('"Novák, Jan" <jan@x.cz>, bob@b.cz')).toEqual(["jan@x.cz", "bob@b.cz"]);
+  });
 });
 
 describe("shouldArchive", () => {

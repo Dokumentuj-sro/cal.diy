@@ -43,6 +43,7 @@ vi.mock("./_base-email", () => {
 });
 
 import AttendeeCancelledEmail from "./attendee-cancelled-email";
+import AttendeeCancelledSeatEmail from "./attendee-cancelled-seat-email";
 import AttendeeRescheduledEmail from "./attendee-rescheduled-email";
 import AttendeeScheduledEmail from "./attendee-scheduled-email";
 
@@ -84,5 +85,19 @@ describe("attendee template archiveType", () => {
       (email) => (email as unknown as { archiveType: string }).archiveType
     );
     expect(new Set(types).size).toBe(3);
+  });
+
+  // Regression (fix round 1): AttendeeCancelledSeatEmail extends AttendeeScheduledEmail
+  // but used to set no archiveType of its own, so it silently inherited "potvrzeni"
+  // through the real class hierarchy (not the mocked BaseEmail). This exercises that
+  // real chain directly, so removing the override makes this fail again.
+  it("does not let a subclass silently inherit AttendeeScheduledEmail's archiveType", () => {
+    const calEvent = createMockCalendarEvent();
+    const attendee = calEvent.attendees[0];
+
+    const cancelledSeat = new AttendeeCancelledSeatEmail(calEvent, attendee);
+
+    expect((cancelledSeat as unknown as { archiveType: string }).archiveType).toBe("zruseno");
+    expect((cancelledSeat as unknown as { archiveType: string }).archiveType).not.toBe("potvrzeni");
   });
 });

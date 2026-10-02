@@ -14,9 +14,9 @@ import { sanitizeDisplayName } from "../lib/sanitizeDisplayName";
 
 export default class BaseEmail {
   name = "";
-  // Fork-only (ADR-0066): the archive type for this email, written alongside the Cal
-  // type (SEND_BOOKING_CONFIRMATION, ...) is not specific enough — reschedule/cancel
-  // inherit it from the confirmation template. Attendee templates override this.
+  // Fork-only (ADR-0066): `this.name` (e.g. SEND_BOOKING_CONFIRMATION) is inherited by
+  // subclasses as-is, so reschedule/cancel/etc. would share the confirmation's name.
+  // Each template therefore carries its own archiveType.
   protected archiveType = "ostatni";
 
   protected getTimezone() {
