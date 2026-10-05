@@ -92,14 +92,14 @@ caught up, drop ours instead of carrying it indefinitely.
   "just to be safe". It is an exact version, so once upstream moves past it the
   pin silently *downgrades* next-auth instead of protecting it.
 
-### next pinned to 16.3.3 (and 15.5.24)
+### next pinned to 16.3.8 (and 15.5.24)
 
 - **Package:** `next`, pinned through three descriptor-scoped entries in root
   `resolutions`:
 
   | Entry | Replaces | Who asks for it |
   | --- | --- | --- |
-  | `next@16.2.3` → `16.3.3` | 16.2.3 | `apps/web` (**production**), `packages/platform/examples/base` |
+  | `next@16.2.3` → `16.3.8` | 16.2.3 | `apps/web` (**production**), `packages/platform/examples/base` |
   | `next@15.5.15` → `15.5.24` | 15.5.15 | `example-apps/credential-sync` |
   | `next@^15.1.0` → `15.5.24` | 15.5.15 | `apps/docs` |
 
@@ -139,8 +139,14 @@ caught up, drop ours instead of carrying it indefinitely.
   Drop any entry whose left-hand version no longer appears there, because it is
   already inert. Then run `yarn install` and confirm
   `yarn npm audit --all --recursive --severity critical` does not mention next.
-  If upstream reaches ≥16.3.3 in `apps/web`, the 16.x entry is dead weight;
+  If upstream reaches ≥16.3.8 in `apps/web`, the 16.x entry is dead weight;
   remove it.
+
+- **Raised 16.3.3 → 16.3.8 on 2026-10-05** for
+  [GHSA-vcvr-r3jv-pc5j](https://github.com/advisories/GHSA-vcvr-r3jv-pc5j),
+  critical: remote code execution in `next/og` `ImageResponse`, vulnerable
+  `>=16.2.0 <16.3.6`. `apps/web` renders OG images, so this one is production.
+  16.3.8 is the newest patch of the same line; 15.x is not affected.
 
 ### tar pinned to 7.5.22 — an inherited pin that had rotted
 
@@ -191,6 +197,27 @@ caught up, drop ours instead of carrying it indefinitely.
   containing a `config.json` — so it would mean deleting a directory upstream
   actively maintains and regenerating six barrel files on every sync. A
   one-line pin costs far less than a carried patch that fights upstream forever.
+
+### trigger.dev + @trigger.dev/sdk pinned to 4.5.16
+
+- **Packages:** `trigger.dev` (the CLI) and `@trigger.dev/sdk`, both declared
+  `4.3.2` in `packages/features`, pinned through descriptor-scoped root
+  `resolutions` (`trigger.dev@4.3.2`, `@trigger.dev/sdk@4.3.2` → `4.5.16`).
+- **Advisory:** [GHSA-gg6r-gp4c-89hp](https://github.com/advisories/GHSA-gg6r-gp4c-89hp),
+  critical — the V1 coordinator ships a default secret and an unauthenticated
+  Socket.IO endpoint. Vulnerable `trigger.dev <4.5.4`. Published the week of
+  2026-10-05; that Monday's audit was the first red one.
+- **Why both, not just the CLI:** the CLI and the SDK are released in lockstep
+  and Trigger.dev expects them on the same version, so the SDK moves with it.
+  4.5.16 is the newest patch of the first fixed line rather than 4.7.x — the
+  smallest jump that clears the advisory.
+- **Exposure:** `trigger.dev` sits in `dependencies`, so the audit counts it as
+  production. Our deploy runs no Trigger.dev coordinator, but as with
+  websocket-driver above, "not wired up today" is not worth depending on.
+- **Self-expiring** like the next entries: once upstream changes the `4.3.2`
+  declarations, the entries stop matching. **Check on each sync:**
+  `grep trigger packages/features/package.json` — drop both entries if upstream
+  is at ≥4.5.4.
 
 ## Booking e-mail archive (Dokumentuj)
 
