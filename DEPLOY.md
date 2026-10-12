@@ -219,6 +219,38 @@ caught up, drop ours instead of carrying it indefinitely.
   `grep trigger packages/features/package.json` — drop both entries if upstream
   is at ≥4.5.4.
 
+### handlebars 4.7.10, proxy-addr 2.0.8, shell-quote 1.11.0
+
+Three criticals published the week of 2026-10-12 turned that Monday's audit
+red. All three are plain root `resolutions` entries, and none needs an override.
+
+- **handlebars → 4.7.10.**
+  [GHSA-8r5x-fm3f-whwj](https://github.com/advisories/GHSA-8r5x-fm3f-whwj) and
+  [GHSA-p8wg-vrv2-v86f](https://github.com/advisories/GHSA-p8wg-vrv2-v86f),
+  both JavaScript injection in `compile`. Vulnerable `>=4.0.0 <=4.7.9`.
+  `apps/web` declares `4.7.9` exactly, and
+  `packages/features/webhooks/lib/sendPayload.ts` compiles **user-written
+  webhook payload templates** with it, so this one is production and
+  reachable by any account that can create a webhook.
+- **proxy-addr → 2.0.8.**
+  [GHSA-jqcg-44mw-7w3h](https://github.com/advisories/GHSA-jqcg-44mw-7w3h),
+  IP spoofing through an IPv4-mapped IPv6 trust subnet. Vulnerable
+  `>=1.1.0 <2.0.8`. It comes in through `express` 4.21.2, which asks for
+  `~2.0.7`, so 2.0.8 satisfies it natively.
+- **shell-quote 1.8.4 → 1.11.0.**
+  [GHSA-pqg4-j6r4-53mv](https://github.com/advisories/GHSA-pqg4-j6r4-53mv),
+  command injection in `quote()`. Vulnerable `>=1.8.4 <1.11.0`. This was an
+  **inherited exact pin that had rotted**, just like `tar` above: the old
+  `1.8.4` entry is the vulnerable version itself. It comes in through
+  `concurrently` and `npm-run-all`, which are script runners, so the real
+  exposure is low, but the audit counts it as production. 1.11.0 is the first
+  fixed version, and it adds `minimist` as a dependency, which was already in
+  the tree.
+- **Check on each sync:** `grep handlebars apps/web/package.json`. Once
+  upstream is at ≥4.7.10, drop the handlebars entry. Drop proxy-addr once
+  `yarn why proxy-addr` shows ≥2.0.8 without our entry. Drop shell-quote once
+  `yarn why shell-quote` shows ≥1.11.0 without our entry.
+
 ## Booking e-mail archive (Dokumentuj)
 
 This one is not a patch waiting for upstream to catch up. It is our own feature
