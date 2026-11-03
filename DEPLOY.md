@@ -92,16 +92,16 @@ caught up, drop ours instead of carrying it indefinitely.
   "just to be safe". It is an exact version, so once upstream moves past it the
   pin silently *downgrades* next-auth instead of protecting it.
 
-### next pinned to 16.3.8 (and 15.5.24)
+### next pinned to 16.4.4 (and 15.5.28)
 
 - **Package:** `next`, pinned through three descriptor-scoped entries in root
   `resolutions`:
 
   | Entry | Replaces | Who asks for it |
   | --- | --- | --- |
-  | `next@16.2.3` → `16.3.8` | 16.2.3 | `apps/web` (**production**), `packages/platform/examples/base` |
-  | `next@15.5.15` → `15.5.24` | 15.5.15 | `example-apps/credential-sync` |
-  | `next@^15.1.0` → `15.5.24` | 15.5.15 | `apps/docs` |
+  | `next@16.2.3` → `16.4.4` | 16.2.3 | `apps/web` (**production**), `packages/platform/examples/base` |
+  | `next@15.5.15` → `15.5.28` | 15.5.15 | `example-apps/credential-sync` |
+  | `next@^15.1.0` → `15.5.28` | 15.5.15 | `apps/docs` |
 
 - **Advisories:** both critical, both covering 16.x `<16.3.3` and 15.x
   `<15.5.24`.
@@ -139,7 +139,7 @@ caught up, drop ours instead of carrying it indefinitely.
   Drop any entry whose left-hand version no longer appears there, because it is
   already inert. Then run `yarn install` and confirm
   `yarn npm audit --all --recursive --severity critical` does not mention next.
-  If upstream reaches ≥16.3.8 in `apps/web`, the 16.x entry is dead weight;
+  If upstream reaches ≥16.4.4 in `apps/web`, the 16.x entry is dead weight;
   remove it.
 
 - **Raised 16.3.3 → 16.3.8 on 2026-10-05** for
@@ -147,6 +147,18 @@ caught up, drop ours instead of carrying it indefinitely.
   critical: remote code execution in `next/og` `ImageResponse`, vulnerable
   `>=16.2.0 <16.3.6`. `apps/web` renders OG images, so this one is production.
   16.3.8 is the newest patch of the same line; 15.x is not affected.
+- **Raised 16.3.8 → 16.4.4 and 15.5.24 → 15.5.28 on 2026-11-03** for two
+  criticals published 2026-10-22 that kept the 10-26 and 11-02 audits red:
+  - [GHSA-2464-fhr4-w9xw](https://github.com/advisories/GHSA-2464-fhr4-w9xw):
+    unauthenticated RCE through the Image Optimization API when SVG files are
+    involved. Vulnerable `<=15.5.27` and `>=16.0.0 <=16.4.0`. Same
+    reachability as GHSA-2xp9 above, so this one is production.
+  - [GHSA-673q-mjm6-r5xr](https://github.com/advisories/GHSA-673q-mjm6-r5xr):
+    unauthenticated RCE in `use cache` functions returning typed arrays.
+    16.x only, `>=16.0.0 <=16.4.0`.
+
+  There is no fixed 16.3.x, so this is a **minor** bump (first fix 16.4.1);
+  16.4.4 is the newest patch of that line. 15.5.28 is the `backport` tag.
 
 ### tar pinned to 7.5.22 — an inherited pin that had rotted
 
@@ -250,6 +262,24 @@ red. All three are plain root `resolutions` entries, and none needs an override.
   upstream is at ≥4.7.10, drop the handlebars entry. Drop proxy-addr once
   `yarn why proxy-addr` shows ≥2.0.8 without our entry. Drop shell-quote once
   `yarn why shell-quote` shows ≥1.11.0 without our entry.
+
+### @sentry/nextjs pinned to 10.75.3
+
+- **Package:** `@sentry/nextjs`, declared `10.33.0` in `apps/web`, pinned
+  through a descriptor-scoped root `resolutions` entry
+  (`@sentry/nextjs@10.33.0` → `10.75.3`).
+- **Advisory:** [GHSA-mchm-gjx6-7h55](https://github.com/advisories/GHSA-mchm-gjx6-7h55),
+  critical — middleware bypass when using the Sentry tunnel route. Vulnerable
+  `>=10.0.0-alpha.0 <10.75.2`. Published 2026-10-22, alongside the next
+  advisories above.
+- **Version choice:** 10.75.3 is the newest patch of the first fixed line,
+  rather than 10.78.x, the smallest jump that clears it. It is still 42 minors
+  above upstream's 10.33.0, so check Sentry wiring (`apps/web/instrumentation*.ts`,
+  `withSentryConfig` in `next.config`) if the build or error reporting
+  misbehaves.
+- **Self-expiring:** once upstream changes the `10.33.0` declaration the entry
+  stops matching. **Check on each sync:** `grep '@sentry/nextjs' apps/web/package.json`.
+  Drop the entry if upstream is at ≥10.75.2.
 
 ## Booking e-mail archive (Dokumentuj)
 
