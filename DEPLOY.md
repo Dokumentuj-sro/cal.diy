@@ -486,5 +486,9 @@ same build (see "Checking what is deployed").
   parallel as two jobs, both fanning out from `prepare`, so they always share a
   release tag and a checkout ref.
 - The image is published to GHCR only — we do not push to Docker Hub.
+- The web build frees runner disk first (`Free disk space` in
+  `.github/actions/docker-build-and-test`). Without it the stock ~14 GB ran out
+  on 2026-11-03 after the next 16.4 bump. If a build dies with
+  `No space left on device` again, look at the two `df -h` lines in that step.
 - Scheduled workflows only run from the default branch, and GitHub disables cron
   after 60 days of repo inactivity (it emails a warning first).
