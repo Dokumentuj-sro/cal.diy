@@ -13,7 +13,7 @@ import {
   setLastCreatedJWT,
   setLastCreatedOAuth2Client,
 } from "../__mocks__/googleapis";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import "vitest-fetch-mock";
 
 import process from "node:process";
@@ -121,6 +121,116 @@ describe("getAvailability", () => {
     });
 
     expect(availabilityWithAllCalendarsAsFallback).toEqual([...mockedBusyTimes1, ...mockedBusyTimes2]);
+  });
+});
+
+describe("getFreeBusyData per-calendar errors", () => {
+  const args = {
+    timeMin: "2026-11-01T00:00:00Z",
+    timeMax: "2026-12-01T00:00:00Z",
+    items: [{ id: "ok@test.com" }, { id: "shared@group.calendar.google.com" }],
+  };
+  const okBusy = { start: "2026-11-03T08:00:00Z", end: "2026-11-03T09:00:00Z" };
+  const sharedBusy = { start: "2026-11-03T14:30:00Z", end: "2026-11-03T15:45:00Z" };
+
+  const setup = () => {
+    const calendarService = BuildCalendarService(mockCredential);
+    setFullMockOAuthManagerRequest();
+    const warnSpy = vi.spyOn((calendarService as unknown as { log: typeof logger }).log, "warn");
+    return { calendarService, warnSpy };
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("returns busy times unchanged and does not retry when no calendar has errors", async () => {
+    const { calendarService, warnSpy } = setup();
+    freebusyQueryMock.mockResolvedValue({
+      data: {
+        calendars: {
+          "ok@test.com": { busy: [okBusy] },
+          "shared@group.calendar.google.com": { busy: [sharedBusy] },
+        },
+      },
+    });
+
+    const result = await calendarService.getFreeBusyData(args);
+
+    expect(result).toEqual([
+      { id: "ok@test.com", ...okBusy },
+      { id: "shared@group.calendar.google.com", ...sharedBusy },
+    ]);
+    expect(freebusyQueryMock).toHaveBeenCalledTimes(1);
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  test("retries only the failed calendar and merges its busy times when the retry succeeds", async () => {
+    const { calendarService, warnSpy } = setup();
+    freebusyQueryMock
+      .mockResolvedValueOnce({
+        data: {
+          calendars: {
+            "ok@test.com": { busy: [okBusy] },
+            "shared@group.calendar.google.com": {
+              busy: [],
+              errors: [{ domain: "global", reason: "backendError" }],
+            },
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: { calendars: { "shared@group.calendar.google.com": { busy: [sharedBusy] } } },
+      });
+
+    const resultPromise = calendarService.getFreeBusyData(args);
+    await vi.runAllTimersAsync();
+    const result = await resultPromise;
+
+    expect(result).toEqual([
+      { id: "ok@test.com", ...okBusy },
+      { id: "shared@group.calendar.google.com", ...sharedBusy },
+    ]);
+    expect(freebusyQueryMock).toHaveBeenCalledTimes(2);
+    expect(freebusyQueryMock.mock.calls[1][0].requestBody.items).toEqual([
+      { id: "shared@group.calendar.google.com" },
+    ]);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(warnSpy.mock.calls[0][1]).toContain("shared@group.calendar.google.com");
+    expect(warnSpy.mock.calls[0][1]).toContain("backendError");
+  });
+
+  test("throws and logs a WARN when the calendar still has errors after the retry", async () => {
+    const { calendarService, warnSpy } = setup();
+    freebusyQueryMock
+      .mockResolvedValueOnce({
+        data: {
+          calendars: {
+            "ok@test.com": { busy: [okBusy] },
+            "shared@group.calendar.google.com": { busy: [], errors: [{ reason: "rateLimitExceeded" }] },
+          },
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          calendars: { "shared@group.calendar.google.com": { busy: [], errors: [{ reason: "notFound" }] } },
+        },
+      });
+
+    const assertion = expect(calendarService.getFreeBusyData(args)).rejects.toThrow(
+      "shared@group.calendar.google.com"
+    );
+    await vi.runAllTimersAsync();
+    await assertion;
+
+    expect(freebusyQueryMock).toHaveBeenCalledTimes(2);
+    expect(warnSpy).toHaveBeenCalledTimes(2);
+    expect(warnSpy.mock.calls[0][1]).toContain("rateLimitExceeded");
+    expect(warnSpy.mock.calls[1][1]).toContain("notFound");
   });
 });
 

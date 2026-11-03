@@ -5,6 +5,8 @@ import { getDestinationCalendarRepository } from "@calcom/features/di/containers
 import { SelectedCalendarRepository } from "@calcom/features/selectedCalendar/repositories/SelectedCalendarRepository";
 import { getLocation, getRichDescription } from "@calcom/lib/CalEventParser";
 import { ORGANIZER_EMAIL_EXEMPT_DOMAINS } from "@calcom/lib/constants";
+import { ErrorCode } from "@calcom/lib/errorCodes";
+import { ErrorWithCode } from "@calcom/lib/errors";
 import logger from "@calcom/lib/logger";
 import { safeStringify } from "@calcom/lib/safeStringify";
 import type { Prisma } from "@calcom/prisma/client";
@@ -27,6 +29,8 @@ import { AxiosLikeResponseToFetchResponse } from "../../_utils/oauth/AxiosLikeRe
 import { CalendarAuth } from "./CalendarAuth";
 
 type FreeBusyArgs = { timeMin: string; timeMax: string; items: { id: string }[] };
+
+const FREEBUSY_RETRY_DELAY_MS = 500;
 
 const log = logger.getSubLogger({ prefix: ["app-store/googlecalendar/lib/CalendarService"] });
 
@@ -545,11 +549,51 @@ class GoogleCalendarService implements Calendar {
     return validCals[0];
   }
 
+  /**
+   * Returns ids of calendars whose freebusy entry carries per-calendar `errors`, logging a WARN for each.
+   * Google returns these with HTTP 200 and an empty `busy`, so ignoring them makes the calendar look free.
+   */
+  private getCalendarIdsWithErrors(calendars: Record<string, calendar_v3.Schema$FreeBusyCalendar>): string[] {
+    return Object.entries(calendars)
+      .filter(([, cal]) => !!cal.errors?.length)
+      .map(([id, cal]) => {
+        this.log.warn(
+          "Google freebusy returned errors for calendar",
+          safeStringify({ calendarId: id, reasons: cal.errors?.map((e) => e.reason) })
+        );
+        return id;
+      });
+  }
+
   async getFreeBusyData(args: FreeBusyArgs): Promise<(EventBusyDate & { id: string })[] | null> {
     const freeBusyResult = await this.getFreeBusyResult(args);
     if (!freeBusyResult.calendars) return null;
 
-    const result = Object.entries(freeBusyResult.calendars).reduce(
+    const calendars = { ...freeBusyResult.calendars };
+    const failedCalendarIds = this.getCalendarIdsWithErrors(calendars);
+
+    if (failedCalendarIds.length) {
+      await new Promise((resolve) => setTimeout(resolve, FREEBUSY_RETRY_DELAY_MS));
+      const retryResult = await this.getFreeBusyResult({
+        ...args,
+        items: failedCalendarIds.map((id) => ({ id })),
+      });
+      for (const id of failedCalendarIds) {
+        calendars[id] = retryResult.calendars?.[id] ?? { errors: [{ reason: "missingFromRetryResponse" }] };
+      }
+
+      const stillFailedCalendarIds = this.getCalendarIdsWithErrors(calendars);
+      if (stillFailedCalendarIds.length) {
+        // Fail closed: an unreadable calendar must not be treated as free.
+        throw new ErrorWithCode(
+          ErrorCode.CalendarCheckFailed,
+          `Google freebusy errors persisted after retry for calendars: ${stillFailedCalendarIds.join(", ")}`,
+          { calendarIds: stillFailedCalendarIds }
+        );
+      }
+    }
+
+    const result = Object.entries(calendars).reduce(
       (c, [id, i]) => {
         i.busy?.forEach((busyTime) => {
           c.push({
