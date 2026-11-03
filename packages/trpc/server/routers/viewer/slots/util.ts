@@ -51,6 +51,8 @@ import { filterBlockedHosts } from "@calcom/features/watchlist/operations/filter
 import { shouldIgnoreContactOwner } from "@calcom/lib/bookings/routing/utils";
 import { RESERVED_SUBDOMAINS } from "@calcom/lib/constants";
 import { getUTCOffsetByTimezone } from "@calcom/lib/dayjs";
+import { ErrorCode } from "@calcom/lib/errorCodes";
+import { ErrorWithCode } from "@calcom/lib/errors";
 import { descendingLimitKeys, intervalLimitKeyToUnit } from "@calcom/lib/intervalLimits/intervalLimit";
 import type { IntervalLimit } from "@calcom/lib/intervalLimits/intervalLimitSchema";
 import { parseBookingLimit } from "@calcom/lib/intervalLimits/isBookingLimits";
@@ -830,7 +832,15 @@ export class AvailableSlotsService {
     /* We get all users working hours and busy slots */
     const allUsersAvailability = premappedUsersAvailability.map(
       (
-        { busy, dateRanges, oooExcludedDateRanges, currentSeats: _currentSeats, timeZone, datesOutOfOffice },
+        {
+          busy,
+          dateRanges,
+          oooExcludedDateRanges,
+          currentSeats: _currentSeats,
+          timeZone,
+          datesOutOfOffice,
+          calendarCheckFailedIds,
+        },
         index
       ) => {
         const currentUser = users[index];
@@ -842,6 +852,7 @@ export class AvailableSlotsService {
           busy,
           user: currentUser,
           datesOutOfOffice,
+          calendarCheckFailedIds,
         };
       }
     );
@@ -899,6 +910,7 @@ export class AvailableSlotsService {
       _enableTroubleshooter: enableTroubleshooter = false,
       _bypassCalendarBusyTimes: bypassBusyCalendarTimes = false,
       _silentCalendarFailures: silentCalendarFailures = false,
+      _failOnCalendarCheckFailure: failOnCalendarCheckFailure = false,
       queuedFormResponseId,
     } = input;
     const orgDetails = input?.orgSlug
@@ -1085,6 +1097,19 @@ export class AvailableSlotsService {
             mode,
           }));
         aggregatedAvailability = getAggregatedAvailability(allUsersAvailability, eventType.schedulingType);
+      }
+    }
+
+    // Only individual event types for now: for team events a failed host is dropped (round robin) or
+    // blocks everyone (collective), and that behaviour is left unchanged.
+    if (failOnCalendarCheckFailure && !eventType.schedulingType) {
+      const calendarCheckFailedIds = allUsersAvailability.flatMap((a) => a.calendarCheckFailedIds ?? []);
+      if (allUsersAvailability.some((a) => a.calendarCheckFailedIds)) {
+        throw new ErrorWithCode(
+          ErrorCode.CalendarCheckFailed,
+          `Calendar availability could not be checked for calendars: ${calendarCheckFailedIds.join(", ")}`,
+          { calendarIds: calendarCheckFailedIds }
+        );
       }
     }
 

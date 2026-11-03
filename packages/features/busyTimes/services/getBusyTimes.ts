@@ -4,6 +4,8 @@ import { getBusyCalendarTimes } from "@calcom/features/calendars/lib/CalendarMan
 import { getDefinedBufferTimes } from "@calcom/features/eventtypes/lib/getDefinedBufferTimes";
 import { subtract } from "@calcom/features/schedules/lib/date-ranges";
 import { stringToDayjs } from "@calcom/lib/dayjs";
+import { ErrorCode } from "@calcom/lib/errorCodes";
+import { ErrorWithCode } from "@calcom/lib/errors";
 import { intervalLimitKeyToUnit } from "@calcom/lib/intervalLimits/intervalLimit";
 import type { IntervalLimit } from "@calcom/lib/intervalLimits/intervalLimitSchema";
 import logger from "@calcom/lib/logger";
@@ -211,10 +213,12 @@ export class BusyTimesService {
             }
           );
         } else {
-          throw new Error(
+          throw new ErrorWithCode(
+            ErrorCode.CalendarCheckFailed,
             `Failed to fetch busy calendar times for selected calendars ${selectedCalendars.map(
               (calendar) => calendar.id
-            )}`
+            )}`,
+            { calendarIds: calendarBusyTimesQuery.failedCalendarIds ?? [] }
           );
         }
       } else {

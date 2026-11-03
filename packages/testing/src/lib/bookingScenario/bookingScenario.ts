@@ -1692,6 +1692,8 @@ export async function mockCalendar(
     creationCrash?: boolean;
     updationCrash?: boolean;
     getAvailabilityCrash?: boolean;
+    /** Thrown from getAvailability instead of the generic crash error */
+    getAvailabilityError?: Error;
   }
 ): Promise<CalendarServiceMethodMock> {
   const appStoreLookupKey = metadataLookupKey;
@@ -1843,6 +1845,9 @@ export async function mockCalendar(
         fallbackToPrimary?: boolean;
       }): Promise<EventBusyDate[]> => {
         const { dateFrom, dateTo, selectedCalendars, mode } = params;
+        if (calendarData?.getAvailabilityError) {
+          throw calendarData.getAvailabilityError;
+        }
         if (calendarData?.getAvailabilityCrash) {
           throw new Error("MockCalendarService.getAvailability fake error");
         }

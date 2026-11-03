@@ -171,6 +171,9 @@ export function getHttpStatusCode(cause: Error | ErrorWithCode): number {
     case ErrorCode.BookingNotFound:
     case ErrorCode.RestrictionScheduleNotFound:
       return 404;
+    // 424 Failed Dependency: an external calendar could not be read
+    case ErrorCode.CalendarCheckFailed:
+      return 424;
     case ErrorCode.UnableToSubscribeToThePlatform:
     case ErrorCode.UpdatingOauthClientError:
     case ErrorCode.CreatingOauthClientError:

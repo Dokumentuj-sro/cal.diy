@@ -9,6 +9,8 @@ import { SlotsInputService_2024_09_04 } from "@/modules/slots/slots-2024-09-04/s
 import { SlotsOutputService_2024_09_04 } from "@/modules/slots/slots-2024-09-04/services/slots-output.service";
 import { SlotsRepository_2024_09_04 } from "@/modules/slots/slots-2024-09-04/slots.repository";
 import { TeamsRepository } from "@/modules/teams/teams/teams.repository";
+import { CalendarCheckFailedException } from "@/modules/slots/slots-2024-09-04/calendar-check-failed.exception";
+import { ErrorCode, ErrorWithCode } from "@calcom/platform-libraries/errors";
 
 describe("SlotsService_2024_09_04", () => {
   let service: SlotsService_2024_09_04;
@@ -152,9 +154,76 @@ describe("SlotsService_2024_09_04", () => {
           startTime: "2024-01-15T00:00:00.000Z",
           endTime: "2024-01-16T23:59:59.000Z",
           ...sharedTestData.routingParams,
+          _failOnCalendarCheckFailure: true,
         },
         ctx: {},
       });
+    });
+  });
+
+  describe("getAvailableSlots - calendar check failures", () => {
+    const query = {
+      type: "byEventTypeId" as const,
+      eventTypeId: 123,
+      start: "2024-01-15T00:00:00.000Z",
+      end: "2024-01-16T00:00:00.000Z",
+      timeZone: "Europe/Prague",
+    };
+    const transformedQuery = {
+      isTeamEvent: false,
+      startTime: "2024-01-15T00:00:00.000Z",
+      endTime: "2024-01-16T23:59:59.000Z",
+      eventTypeId: 123,
+      eventTypeSlug: "test-event",
+      usernameList: [],
+      timeZone: "Europe/Prague",
+      orgSlug: null,
+      rescheduleUid: null,
+    };
+
+    beforeEach(() => {
+      (slotsInputService.transformGetSlotsQuery as jest.Mock).mockResolvedValue(transformedQuery);
+    });
+
+    it("opts in to failing on calendar check failures and returns slots when the check succeeds", async () => {
+      (availableSlotsService.getAvailableSlots as jest.Mock).mockResolvedValue({ slots: {} });
+
+      const result = await service.getAvailableSlots(query);
+
+      expect(availableSlotsService.getAvailableSlots).toHaveBeenCalledWith({
+        input: { ...transformedQuery, _failOnCalendarCheckFailure: true },
+        ctx: {},
+      });
+      expect(result).toEqual({
+        slots: {
+          "2024-01-15": [{ time: "2024-01-15T10:00:00.000Z" }, { time: "2024-01-15T11:00:00.000Z" }],
+        },
+      });
+    });
+
+    it("maps a CalendarCheckFailed error to a 424 CALENDAR_CHECK_FAILED exception with the calendar ids", async () => {
+      (availableSlotsService.getAvailableSlots as jest.Mock).mockRejectedValue(
+        new ErrorWithCode(ErrorCode.CalendarCheckFailed, "freebusy failed", {
+          calendarIds: ["shared@group.calendar.google.com"],
+        })
+      );
+
+      const error = await service.getAvailableSlots(query).catch((e) => e);
+
+      expect(error).toBeInstanceOf(CalendarCheckFailedException);
+      expect(error.getStatus()).toBe(424);
+      expect(error.name).toBe("CALENDAR_CHECK_FAILED");
+      expect(error.getResponse()).toEqual({
+        message: "Calendar availability could not be checked for calendars: shared@group.calendar.google.com",
+        calendarIds: ["shared@group.calendar.google.com"],
+      });
+    });
+
+    it("leaves other ErrorWithCode errors untouched", async () => {
+      const otherError = new ErrorWithCode(ErrorCode.InternalServerError, "boom");
+      (availableSlotsService.getAvailableSlots as jest.Mock).mockRejectedValue(otherError);
+
+      await expect(service.getAvailableSlots(query)).rejects.toBe(otherError);
     });
   });
 

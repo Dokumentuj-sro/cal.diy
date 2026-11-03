@@ -9,6 +9,7 @@ import { getRichDescription, getUid } from "@calcom/lib/CalEventParser";
 import { CalendarAppDelegationCredentialError } from "@calcom/lib/CalendarAppError";
 import { ORGANIZER_EMAIL_EXEMPT_DOMAINS } from "@calcom/lib/constants";
 import { buildNonDelegationCredentials } from "@calcom/lib/delegationCredential";
+import { ErrorWithCode } from "@calcom/lib/errors";
 import { formatCalEvent } from "@calcom/lib/formatCalendarEvent";
 import logger from "@calcom/lib/logger";
 import { getPiiFreeCalendarEvent, getPiiFreeCredential } from "@calcom/lib/piiFreeData";
@@ -352,7 +353,15 @@ export const getBusyCalendarTimes = async (
       selectedCalendarIds: selectedCalendars.map((calendar) => calendar.externalId),
       error: safeStringify(e),
     });
-    return { success: false, data: [{ start: startDate, end: endDate, source: "error-placeholder" }] };
+    const erroredCalendarIds = e instanceof ErrorWithCode ? e.data?.calendarIds : undefined;
+    const failedCalendarIds = Array.isArray(erroredCalendarIds)
+      ? erroredCalendarIds.map(String)
+      : selectedCalendars.map((calendar) => calendar.externalId);
+    return {
+      success: false,
+      data: [{ start: startDate, end: endDate, source: "error-placeholder" }],
+      failedCalendarIds,
+    };
   }
   return { success: true, data: results.reduce((acc, availability) => acc.concat(availability), []) };
 };

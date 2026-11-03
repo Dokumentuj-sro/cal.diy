@@ -16,6 +16,7 @@ import { buildDateRanges, subtract } from "@calcom/features/schedules/lib/date-r
 import { getWorkingHours } from "@calcom/lib/availability";
 import { stringToDayjsZod } from "@calcom/lib/dayjs";
 import { ErrorCode } from "@calcom/lib/errorCodes";
+import { ErrorWithCode } from "@calcom/lib/errors";
 import { getHolidayService } from "@calcom/lib/holidays";
 import { getHolidayEmoji } from "@calcom/lib/holidays/getHolidayEmoji";
 import { HttpError } from "@calcom/lib/http-error";
@@ -193,6 +194,8 @@ export type GetUserAvailabilityResult = {
       }[]
     | null;
   datesOutOfOffice?: IOutOfOfficeData;
+  /** Set when a connected calendar couldn't be read: the empty availability means "unknown", not "fully booked". */
+  calendarCheckFailedIds?: string[];
 };
 
 export interface IFromUser {
@@ -605,7 +608,13 @@ export class UserAvailabilityService {
       });
     } catch (error) {
       log.error(`Error fetching busy times for user ${username}:`, error);
+      const failedIds =
+        error instanceof ErrorWithCode && error.code === ErrorCode.CalendarCheckFailed
+          ? error.data?.calendarIds
+          : undefined;
+      const calendarCheckFailedIds = Array.isArray(failedIds) ? failedIds.map(String) : undefined;
       return {
+        calendarCheckFailedIds,
         busy: [],
         timeZone: finalTimezone,
         dateRanges: [],

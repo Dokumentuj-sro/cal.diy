@@ -3,6 +3,7 @@ import { AvailableSlotsService } from "@/lib/services/available-slots.service";
 import { MembershipsRepository } from "@/modules/memberships/memberships.repository";
 import { MembershipsService } from "@/modules/memberships/services/memberships.service";
 import { TimeSlots } from "@/modules/slots/slots-2024-04-15/services/slots-output.service";
+import { CalendarCheckFailedException } from "@/modules/slots/slots-2024-09-04/calendar-check-failed.exception";
 import {
   SlotsInputService_2024_09_04,
   InternalGetSlotsQuery,
@@ -24,6 +25,7 @@ import { z } from "zod";
 
 import { SlotFormat } from "@calcom/platform-enums";
 import { SchedulingType } from "@calcom/platform-libraries";
+import { ErrorCode } from "@calcom/platform-libraries/errors";
 import { validateRoundRobinSlotAvailability } from "@calcom/platform-libraries/slots";
 import type {
   GetSlotsInput_2024_09_04,
@@ -39,6 +41,9 @@ const eventTypeMetadataSchema = z
   .nullable();
 
 const DEFAULT_RESERVATION_DURATION = 5;
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null;
 
 type InternalSlotsQuery = InternalGetSlotsQuery | InternalGetSlotsQueryWithRouting;
 @Injectable()
@@ -57,7 +62,7 @@ export class SlotsService_2024_09_04 {
   private async fetchAndFormatSlots(queryTransformed: InternalSlotsQuery, format?: SlotFormat) {
     try {
       const availableSlots: TimeSlots = await this.availableSlotsService.getAvailableSlots({
-        input: queryTransformed,
+        input: { ...queryTransformed, _failOnCalendarCheckFailure: true },
         ctx: {},
       });
 
@@ -72,6 +77,11 @@ export class SlotsService_2024_09_04 {
       return formatted;
     } catch (error) {
       if (error instanceof Error) {
+        // Matched by code, not instanceof, so a duplicated ErrorWithCode class in the bundle can't turn this into a 500
+        if ("code" in error && error.code === ErrorCode.CalendarCheckFailed) {
+          const calendarIds = "data" in error && isRecord(error.data) ? error.data.calendarIds : undefined;
+          throw new CalendarCheckFailedException(Array.isArray(calendarIds) ? calendarIds.map(String) : []);
+        }
         if (error.message.includes("Invalid time range given")) {
           throw new BadRequestException(
             "Invalid time range given - check the 'start' and 'end' query parameters."
