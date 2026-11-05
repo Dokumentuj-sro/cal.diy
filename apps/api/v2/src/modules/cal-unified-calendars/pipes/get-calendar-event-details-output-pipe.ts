@@ -87,6 +87,8 @@ export class GoogleCalendarEventOutputPipe
     const calendarEvent = new UnifiedCalendarEventOutput();
 
     calendarEvent.id = googleEvent.id;
+    calendarEvent.iCalUID = googleEvent.iCalUID ?? null;
+    calendarEvent.created = googleEvent.created ?? null;
     calendarEvent.title = googleEvent.summary;
     calendarEvent.description = googleEvent.description || null;
 

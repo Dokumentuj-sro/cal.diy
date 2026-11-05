@@ -220,14 +220,21 @@ export class GoogleCalendarService {
   ): Promise<GoogleCalendarEventResponse[]> {
     const effectiveCalendarId = calendarId || "primary";
     try {
-      const response = await calendar.events.list({
-        calendarId: effectiveCalendarId,
-        timeMin,
-        timeMax,
-        singleEvents: true,
-        orderBy: "startTime",
-      });
-      const items = (response.data.items || []) as GoogleCalendarEventResponse[];
+      const items: GoogleCalendarEventResponse[] = [];
+      let pageToken: string | undefined;
+      do {
+        const response = await calendar.events.list({
+          calendarId: effectiveCalendarId,
+          timeMin,
+          timeMax,
+          singleEvents: true,
+          orderBy: "startTime",
+          maxResults: 250,
+          pageToken,
+        });
+        items.push(...((response.data.items || []) as GoogleCalendarEventResponse[]));
+        pageToken = response.data.nextPageToken || undefined;
+      } while (pageToken);
       // Include both timed events (start.dateTime) and all-day events (start.date)
       return items.filter(
         (e) => e.start?.dateTime != null || e.start?.date != null

@@ -197,4 +197,22 @@ describe("GoogleCalendarEventOutputPipe", () => {
       expect(result).toEqual([]);
     });
   });
+
+  describe("iCalUID and created", () => {
+    it("passes iCalUID and created through", () => {
+      const result = pipe.transform(
+        createGoogleCalendarEventFixture({ iCalUID: "x@Cal.com", created: "2026-11-01T10:00:00.000Z" })
+      );
+      expect(result.iCalUID).toBe("x@Cal.com");
+      expect(result.created).toBe("2026-11-01T10:00:00.000Z");
+    });
+
+    it("returns null when missing", () => {
+      const result = pipe.transform(
+        createGoogleCalendarEventFixture({ iCalUID: undefined, created: undefined } as never)
+      );
+      expect(result.iCalUID).toBeNull();
+      expect(result.created).toBeNull();
+    });
+  });
 });

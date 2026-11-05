@@ -458,4 +458,25 @@ describe("GoogleCalendarService", () => {
       );
     });
   });
+
+  describe("listEventsWithClient", () => {
+    const ev = (id: string) => ({ id, start: { dateTime: "2026-11-05T10:00:00Z" } });
+
+    it("follows nextPageToken and returns events from all pages", async () => {
+      const list = jest
+        .fn()
+        .mockResolvedValueOnce({ data: { items: [ev("e1")], nextPageToken: "p2" } })
+        .mockResolvedValueOnce({ data: { items: [ev("e2")] } });
+      const calendar = { events: { list } };
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const result = await (service as any).listEventsWithClient(calendar, "primary", "a", "b");
+
+      expect(result.map((e: { id: string }) => e.id)).toEqual(["e1", "e2"]);
+      expect(list).toHaveBeenCalledTimes(2);
+      expect(list.mock.calls[0][0].pageToken).toBeUndefined();
+      expect(list.mock.calls[0][0].maxResults).toBe(250);
+      expect(list.mock.calls[1][0].pageToken).toBe("p2");
+    });
+  });
 });

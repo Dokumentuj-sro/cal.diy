@@ -335,6 +335,33 @@ export class UnifiedCalendarEventOutput {
   id!: string;
 
   @IsString()
+  @IsOptional()
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: "iCalendar UID of the event (Google iCalUID)",
+  })
+  iCalUID?: string | null;
+
+  @IsString()
+  @IsOptional()
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: "Creation time of the event as reported by the calendar provider (RFC3339)",
+  })
+  created?: string | null;
+
+  @IsString()
+  @IsOptional()
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    description: "Uid of the Cal booking that created this calendar event, if any",
+  })
+  calBookingUid?: string | null;
+
+  @IsString()
   @ApiProperty({
     type: String,
     description: "Title of the calendar event",

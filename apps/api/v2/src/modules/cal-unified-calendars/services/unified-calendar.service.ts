@@ -16,6 +16,7 @@ import {
   GoogleCalendarEventResponse,
 } from "@/modules/cal-unified-calendars/pipes/get-calendar-event-details-output-pipe";
 import { GoogleCalendarService } from "@/modules/cal-unified-calendars/services/google-calendar.service";
+import { PrismaReadService } from "@/modules/prisma/prisma-read.service";
 import { UnifiedCalendarsFreebusyService } from "@/modules/cal-unified-calendars/services/unified-calendars-freebusy.service";
 
 type ConnectedCalendarsList = ConnectedDestinationCalendars["connectedCalendars"];
@@ -45,7 +46,8 @@ export class UnifiedCalendarService {
   constructor(
     private readonly googleCalendarService: GoogleCalendarService,
     private readonly freebusyService: UnifiedCalendarsFreebusyService,
-    private readonly calendarsService: CalendarsService
+    private readonly calendarsService: CalendarsService,
+    private readonly dbRead: PrismaReadService
   ) {}
 
   // ─── Strategy: validate calendar type ──────────────────────────────────
@@ -64,6 +66,23 @@ export class UnifiedCalendarService {
 
   private transformEvents(events: GoogleCalendarEventResponse[]) {
     return events.map((e) => this.pipe.transform(e));
+  }
+
+  /** Marks events that Cal itself created for a booking (BookingReference.uid == event id). */
+  private async transformEventsWithBookingUid(events: GoogleCalendarEventResponse[]) {
+    const output = this.transformEvents(events);
+    const ids = output.map((e) => e.id).filter(Boolean);
+    if (ids.length === 0) return output;
+    const refs = await this.dbRead.prisma.bookingReference.findMany({
+      where: { type: GOOGLE_CALENDAR_TYPE, uid: { in: ids } },
+      select: { uid: true, booking: { select: { uid: true } } },
+    });
+    const byEventId = new Map<string, string>();
+    for (const r of refs) {
+      if (r.booking?.uid) byEventId.set(r.uid, r.booking.uid);
+    }
+    for (const e of output) e.calBookingUid = byEventId.get(e.id) ?? null;
+    return output;
   }
 
   // ─── Connections ───────────────────────────────────────────────────────
@@ -107,7 +126,7 @@ export class UnifiedCalendarService {
   async listEvents(calendar: string, userId: number, calendarId: string, timeMin: string, timeMax: string) {
     this.ensureGoogleCalendar(calendar, "List events");
     const events = await this.googleCalendarService.listEventsForUser(userId, calendarId, timeMin, timeMax);
-    return this.transformEvents(events);
+    return this.transformEventsWithBookingUid(events);
   }
 
   async createEvent(calendar: string, userId: number, calendarId: string, body: CreateUnifiedCalendarEventInput) {
@@ -142,7 +161,7 @@ export class UnifiedCalendarService {
       timeMin,
       timeMax
     );
-    return this.transformEvents(events);
+    return this.transformEventsWithBookingUid(events);
   }
 
   async createConnectionEvent(
